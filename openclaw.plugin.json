@@ -1,0 +1,126 @@
+{
+  "id": "memory-mdvdb",
+  "name": "Memory (mdvdb)",
+  "description": "mdvdb-backed long-term memory with hybrid search, time decay, and link boosting",
+  "kind": "memory",
+  "configSchema": {
+    "type": "object",
+    "properties": {
+      "memoryDir": {
+        "type": "string",
+        "description": "Directory to store memory files",
+        "default": "~/.openclaw/memory/mdvdb/"
+      },
+      "mdvdbBin": {
+        "type": "string",
+        "description": "Path to the mdvdb binary",
+        "default": "mdvdb"
+      },
+      "autoCapture": {
+        "type": "boolean",
+        "description": "Automatically capture important information from conversations",
+        "default": false
+      },
+      "autoRecall": {
+        "type": "boolean",
+        "description": "Automatically recall relevant memories before agent starts",
+        "default": true
+      },
+      "captureMaxChars": {
+        "type": "number",
+        "description": "Maximum character length for auto-captured memories",
+        "default": 500,
+        "minimum": 100,
+        "maximum": 10000
+      },
+      "searchDefaults": {
+        "type": "object",
+        "properties": {
+          "mode": {
+            "type": "string",
+            "enum": ["hybrid", "semantic", "lexical"],
+            "default": "hybrid"
+          },
+          "decay": {
+            "type": "boolean",
+            "description": "Enable time decay in search results",
+            "default": true
+          },
+          "boostLinks": {
+            "type": "boolean",
+            "description": "Boost results with links to other memories",
+            "default": false
+          },
+          "limit": {
+            "type": "number",
+            "description": "Default number of search results",
+            "default": 5,
+            "minimum": 1
+          },
+          "minScore": {
+            "type": "number",
+            "description": "Minimum similarity score for search results",
+            "default": 0.1,
+            "minimum": 0,
+            "maximum": 1
+          },
+          "decayHalfLife": {
+            "type": "number",
+            "description": "Half-life in days for time decay (uses mdvdb config if unset)"
+          }
+        }
+      }
+    }
+  },
+  "uiHints": {
+    "memoryDir": {
+      "label": "Memory Directory",
+      "help": "Directory where memory files are stored as Markdown"
+    },
+    "mdvdbBin": {
+      "label": "mdvdb Binary Path",
+      "help": "Path to the mdvdb CLI binary (must be installed separately)",
+      "advanced": true
+    },
+    "autoCapture": {
+      "label": "Auto-Capture",
+      "help": "Automatically store important information from conversations"
+    },
+    "autoRecall": {
+      "label": "Auto-Recall",
+      "help": "Automatically inject relevant memories into agent context"
+    },
+    "captureMaxChars": {
+      "label": "Capture Max Characters",
+      "help": "Maximum character length for auto-captured memories (100-10000)",
+      "advanced": true
+    },
+    "searchDefaults.mode": {
+      "label": "Search Mode",
+      "help": "Default search mode: hybrid (semantic + BM25), semantic only, or lexical only"
+    },
+    "searchDefaults.decay": {
+      "label": "Time Decay",
+      "help": "Reduce relevance of older memories in search results"
+    },
+    "searchDefaults.boostLinks": {
+      "label": "Boost Links",
+      "help": "Boost results that link to other memories"
+    },
+    "searchDefaults.limit": {
+      "label": "Result Limit",
+      "help": "Default number of search results to return",
+      "advanced": true
+    },
+    "searchDefaults.minScore": {
+      "label": "Minimum Score",
+      "help": "Minimum similarity score for results (0.0-1.0)",
+      "advanced": true
+    },
+    "searchDefaults.decayHalfLife": {
+      "label": "Decay Half-Life (days)",
+      "help": "Number of days for memory relevance to halve (uses mdvdb config if unset)",
+      "advanced": true
+    }
+  }
+}
