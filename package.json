@@ -1,0 +1,25 @@
+{
+  "name": "@geckse/openclaw-mdvdb-memory",
+  "version": "0.1.0",
+  "description": "mdvdb-backed long-term memory plugin for OpenClaw with hybrid search, time decay, and link boosting",
+  "type": "module",
+  "main": "./src/index.ts",
+  "openclaw": {
+    "extensions": [
+      "./src/index.ts"
+    ]
+  },
+  "scripts": {
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@sinclair/typebox": "0.34.48"
+  },
+  "devDependencies": {
+    "typescript": "^5.4.0",
+    "vitest": "^1.6.0"
+  },
+  "license": "MIT"
+}
