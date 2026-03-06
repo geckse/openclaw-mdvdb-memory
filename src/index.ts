@@ -3,7 +3,7 @@
  *
  * Long-term memory with hybrid search (semantic + BM25) for AI conversations.
  * Uses mdvdb CLI binary for storage, indexing, and retrieval.
- * Stores memories as plain Markdown files with YAML frontmatter.
+ * Stores memories as append-only daily Markdown logs (memory/YYYY-MM-DD.md).
  */
 
 import { Type } from "@sinclair/typebox";
@@ -151,18 +151,25 @@ const memoryPlugin = {
 
     api.registerTool(
       {
-        name: "memory_recall",
-        label: "Memory Recall",
+        name: "memory_search",
+        label: "Memory Search",
         description:
-          "Search through long-term memories. Use when you need context about user preferences, past decisions, or previously discussed topics.",
+          "Semantic recall over indexed memory snippets. Returns snippet text, file path, line range, and score.",
         parameters: Type.Object({
           query: Type.String({ description: "Search query" }),
           limit: Type.Optional(Type.Number({ description: "Max results (default: 5)" })),
+          filter: Type.Optional(Type.Array(Type.String(), { description: "Frontmatter filter expressions (e.g. category=preference, importance=0.9)" })),
+          path: Type.Optional(Type.String({ description: "Restrict search to files under this path prefix" })),
         }),
         async execute(_toolCallId, params) {
-          const { query, limit } = params as { query: string; limit?: number };
+          const { query, limit, filter, path: pathPrefix } = params as {
+            query: string;
+            limit?: number;
+            filter?: string[];
+            path?: string;
+          };
 
-          const results = await mdvdb.search(query, { limit });
+          const results = await mdvdb.search(query, { limit, filter, pathPrefix });
 
           if (results.length === 0) {
             return {
@@ -172,27 +179,58 @@ const memoryPlugin = {
           }
 
           const text = results
-            .map(
-              (r, i) =>
-                `${i + 1}. [${r.metadata?.category ?? "other"}] ${r.text} (${(r.score * 100).toFixed(0)}%)`,
-            )
+            .map((r, i) => {
+              const lineRef = r.lineStart != null
+                ? (r.lineEnd != null ? `#L${r.lineStart}-L${r.lineEnd}` : `#L${r.lineStart}`)
+                : "";
+              return `${i + 1}. ${r.text}\n   Source: ${r.file}${lineRef} (${(r.score * 100).toFixed(0)}%)`;
+            })
             .join("\n");
 
           const sanitizedResults = results.map((r) => ({
-            id: r.metadata?.id ?? r.file,
+            path: r.file,
             text: r.text,
-            category: r.metadata?.category ?? "other",
-            importance: r.metadata?.importance ?? 0.7,
+            lineStart: r.lineStart,
+            lineEnd: r.lineEnd,
             score: r.score,
           }));
 
           return {
-            content: [{ type: "text", text: `Found ${results.length} memories:\n\n${text}` }],
-            details: { count: results.length, memories: sanitizedResults },
+            content: [{ type: "text", text }],
+            details: { count: results.length, snippets: sanitizedResults },
           };
         },
       },
-      { name: "memory_recall" },
+      { name: "memory_search" },
+    );
+
+    api.registerTool(
+      {
+        name: "memory_get",
+        label: "Memory Get",
+        description:
+          "Read a specific memory Markdown file by path, optionally from a starting line for N lines. Paths outside MEMORY.md / memory/ are rejected.",
+        parameters: Type.Object({
+          path: Type.String({ description: "Workspace-relative path (e.g. memory/2026-03-06.md or MEMORY.md)" }),
+          startLine: Type.Optional(Type.Number({ description: "Starting line number (1-based)" })),
+          numLines: Type.Optional(Type.Number({ description: "Number of lines to read" })),
+        }),
+        async execute(_toolCallId, params) {
+          const { path: filePath, startLine, numLines } = params as {
+            path: string;
+            startLine?: number;
+            numLines?: number;
+          };
+
+          const result = await mdvdb.get(filePath, startLine, numLines);
+
+          return {
+            content: [{ type: "text", text: result.text || "(empty)" }],
+            details: { path: result.path, empty: result.text === "" },
+          };
+        },
+      },
+      { name: "memory_get" },
     );
 
     api.registerTool(
@@ -210,16 +248,19 @@ const memoryPlugin = {
               enum: [...MEMORY_CATEGORIES],
             }),
           ),
+          links: Type.Optional(Type.Array(Type.String(), { description: "[[wiki-links]] to related memory files (e.g. ['2026-03-06-a1b2c3d4'])" })),
         }),
         async execute(_toolCallId, params) {
           const {
             text,
             importance = 0.7,
             category,
+            links: explicitLinks,
           } = params as {
             text: string;
             importance?: number;
             category?: MemoryCategory;
+            links?: string[];
           };
 
           // Check for duplicates
@@ -240,12 +281,24 @@ const memoryPlugin = {
             };
           }
 
+          // Auto-discover related memories for linking
+          const links = explicitLinks ?? [];
+          if (links.length === 0) {
+            const related = await mdvdb.search(text, { limit: 3, minScore: 0.5 });
+            for (const r of related) {
+              const basename = r.file.replace(/\.md$/, "").replace(/^.*\//, "");
+              if (basename) {
+                links.push(basename);
+              }
+            }
+          }
+
           const resolvedCategory = category ?? detectCategory(text);
-          const entry = await mdvdb.store(text, resolvedCategory, importance, "manual");
+          const entry = await mdvdb.store(text, resolvedCategory, importance, "manual", ["memory"], links);
 
           return {
             content: [{ type: "text", text: `Stored: "${text.slice(0, 100)}..."` }],
-            details: { action: "created", id: entry.id },
+            details: { action: "created", id: entry.id, links },
           };
         },
       },
@@ -366,6 +419,33 @@ const memoryPlugin = {
           });
 
         mem
+          .command("ingest")
+          .description("Ingest/index all memory files (or re-embed with --reindex)")
+          .option("--reindex", "Force re-embedding of all files")
+          .option("--file <path>", "Ingest a specific file only")
+          .action(async (opts: { reindex?: boolean; file?: string }) => {
+            console.log("Ingesting memory files...");
+            const output = await mdvdb.ingest({ reindex: opts.reindex, file: opts.file });
+            if (output.trim()) {
+              console.log(output.trim());
+            }
+            console.log("Done.");
+          });
+
+        mem
+          .command("reindex")
+          .description("Fully rebuild the mdvdb index from scratch (re-embed all files)")
+          .action(async () => {
+            console.log("Rebuilding index from scratch...");
+            const output = await mdvdb.ingest({ reindex: true });
+            if (output.trim()) {
+              console.log(output.trim());
+            }
+            const statsData = await mdvdb.stats();
+            console.log(`Reindexed: ${statsData.totalFiles} files, ${statsData.totalSections} sections`);
+          });
+
+        mem
           .command("stats")
           .description("Show memory statistics")
           .action(async () => {
@@ -474,7 +554,13 @@ const memoryPlugin = {
               continue;
             }
 
-            await mdvdb.store(text, category, 0.7, "auto-capture");
+            // Auto-discover related memories for linking
+            const related = await mdvdb.search(text, { limit: 2, minScore: 0.5 });
+            const autoLinks = related
+              .map((r) => r.file.replace(/\.md$/, "").replace(/^.*\//, ""))
+              .filter(Boolean);
+
+            await mdvdb.store(text, category, 0.7, "auto-capture", ["memory"], autoLinks);
             stored++;
           }
 

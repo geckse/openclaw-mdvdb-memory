@@ -1,25 +1,22 @@
 # memory-mdvdb
 
-> **Experimental** — This plugin is under active development and not yet recommended for production use. APIs, storage format, and configuration may change without notice.
+> **Experimental** — APIs, storage format, and configuration may change without notice.
 
 OpenClaw memory plugin backed by [mdvdb](https://github.com/geckse/mdvdb) — a filesystem-native Markdown vector database.
 
-Gives OpenClaw agents long-term memory with hybrid search (semantic + BM25), time decay, and link boosting. Memories are stored as plain Markdown files with YAML frontmatter — human-readable, inspectable, and version-controllable.
+Hybrid search (semantic + BM25), time decay, wiki-link boosting, frontmatter filtering. Memories are plain Markdown with YAML frontmatter — human-readable, version-controllable.
 
-Zero Node.js native dependencies. All database operations go through the `mdvdb` CLI.
+Zero Node.js native dependencies. All operations go through the `mdvdb` CLI.
 
 ## Prerequisites
 
-- [mdvdb](https://github.com/geckse/mdvdb) CLI installed and available on PATH
+- [mdvdb](https://github.com/geckse/mdvdb) CLI on PATH
 - [OpenClaw](https://github.com/geckse/openclaw) runtime
 
 ## Install
 
 ```bash
-# Install the plugin
 openclaw plugins install @geckse/memory-mdvdb
-
-# Set it as the active memory provider
 openclaw config set plugins.slots.memory memory-mdvdb
 ```
 
@@ -27,97 +24,141 @@ openclaw config set plugins.slots.memory memory-mdvdb
 
 ```bash
 npm install
-
-# Link plugin for local dev
-npm run dev:install
-
-# Unlink
-npm run dev:uninstall
+npm run dev:install    # link plugin
+npm run dev:uninstall  # unlink
 ```
 
 ## Tools
 
-The plugin registers three agent tools:
-
 | Tool | Description |
 |------|-------------|
-| `memory_recall` | Search memories by query. Returns ranked results with scores. |
-| `memory_store` | Save information with optional category and importance (0–1). Deduplicates automatically. |
-| `memory_forget` | Delete memories by ID or search query. GDPR-compliant. |
+| `memory_search` | Hybrid recall over indexed memories. Supports frontmatter filtering (`--filter category=preference`) and path scoping. |
+| `memory_get` | Read a memory file by path, optionally a line range. Graceful on missing files. |
+| `memory_store` | Store a memory with category, importance (0-1), tags, and `[[wiki-links]]`. Auto-discovers related memories. |
+| `memory_forget` | Delete by ID or search query. |
 
 ### Categories
 
-Memories are auto-categorized (or manually tagged) as: `preference`, `fact`, `decision`, `entity`, `other`.
+`preference`, `fact`, `decision`, `entity`, `other`
+
+### Frontmatter filtering
+
+```json
+{ "query": "user preferences", "filter": ["category=preference", "importance=0.9"] }
+```
+
+### Wiki-links
+
+Storing a memory auto-discovers related ones and adds `[[wiki-links]]`. Linked memories rank higher with `boostLinks`.
+
+```json
+{ "text": "Switched to Bun runtime", "links": ["2026-03-06-a1b2c3d4"] }
+```
+
+## Time decay
+
+By default, only time-log memory files (`YYYY-MM-DD-*.md`) are subject to time decay. Static knowledge files in the memory directory are unaffected.
+
+- **Half-life:** 7 days — a memory's relevance halves every week
+- **Scoped via `decayInclude`:** defaults to `["????-??-??-*.md"]`
+- Override with `decayExclude` to exempt specific patterns
+
+## Excluded files
+
+OpenClaw workspace files are excluded from indexing by default:
+
+`AGENTS.md`, `HEARTBEAT.md`, `SOUL.md`, `IDENTITY.md`, `BOOTSTRAP.md`, `TOOLS.md`, `USER.md`
+
+These are loaded by OpenClaw through their own mechanisms — indexing them as memories would create duplicate signals.
+
+Override via `ignorePatterns`. Set to `[]` to disable all exclusions.
 
 ## Configuration
 
-Configure via `openclaw.plugin.json` or the OpenClaw settings UI.
+Config goes in `~/.openclaw/openclaw.json` under `plugins.entries.memory-mdvdb.config`:
 
 ```jsonc
 {
-  // Directory for memory files (default: ~/.openclaw/memory/mdvdb/)
-  "memoryDir": "~/.openclaw/memory/mdvdb/",
+  "plugins": {
+    "entries": {
+      "memory-mdvdb": {
+        "enabled": true,
+        "config": {
+          "embedding": {
+            "provider": "openai",
+            "apiKey": "${OPENAI_API_KEY}"
+          }
+        }
+      }
+    }
+  }
+}
+```
 
-  // Path to mdvdb binary (default: "mdvdb")
+### Embedding providers
+
+**OpenAI** (default):
+```jsonc
+{ "provider": "openai", "apiKey": "${OPENAI_API_KEY}" }
+```
+
+**Ollama** (local):
+```jsonc
+{ "provider": "ollama", "model": "nomic-embed-text" }
+```
+
+**Custom** (OpenAI-compatible):
+```jsonc
+{ "provider": "custom", "baseUrl": "https://api.example.com/v1", "apiKey": "..." }
+```
+
+### Full reference
+
+```jsonc
+{
+  "memoryDir": "~/.openclaw/workspace/memory/",
   "mdvdbBin": "mdvdb",
-
-  // Auto-store important info from conversations (default: false)
+  "embedding": { "provider": "openai", "apiKey": "${OPENAI_API_KEY}" },
   "autoCapture": false,
-
-  // Inject relevant memories into agent context automatically (default: true)
   "autoRecall": true,
-
-  // Max character length for auto-captured memories (default: 500)
   "captureMaxChars": 500,
-
+  "ignorePatterns": ["AGENTS.md", "HEARTBEAT.md", "SOUL.md", "IDENTITY.md", "BOOTSTRAP.md", "TOOLS.md", "USER.md"],
   "searchDefaults": {
-    // "hybrid" | "semantic" | "lexical" (default: "hybrid")
-    "mode": "hybrid",
-
-    // Reduce relevance of older memories (default: true)
-    "decay": true,
-
-    // Boost results that link to other memories (default: false)
-    "boostLinks": false,
-
-    // Max search results (default: 5)
+    "mode": "hybrid",           // "hybrid" | "semantic" | "lexical"
+    "decay": true,              // enable time decay
+    "decayHalfLife": 7,         // days for relevance to halve
+    "decayInclude": ["????-??-??-*.md"],  // only these files decay
+    "decayExclude": [],         // exempt patterns from decay
+    "boostLinks": false,        // boost wiki-linked results
     "limit": 5,
-
-    // Minimum similarity score 0.0–1.0 (default: 0.1)
-    "minScore": 0.1,
-
-    // Days for memory relevance to halve (uses mdvdb config if unset)
-    "decayHalfLife": 30
+    "minScore": 0.1
   }
 }
 ```
 
 ## Lifecycle Hooks
 
-- **Auto-recall** (`before_agent_start`) — searches memories matching the user's prompt and injects them as context. Enabled by default.
-- **Auto-capture** (`agent_end`) — scans user messages for important information (preferences, decisions, entities) and stores them. Disabled by default.
-
-Auto-capture uses rule-based trigger detection and includes prompt injection filtering to prevent storing malicious content.
+- **Auto-recall** (`before_agent_start`) — injects matching memories into context. On by default.
+- **Auto-capture** (`agent_end`) — stores important info from conversations. Off by default.
 
 ## CLI
 
 ```bash
-# List memory count
-openclaw mdvdb-mem list
-
-# Search memories
-openclaw mdvdb-mem search "user preferences" --limit 10
-
-# Show index statistics
-openclaw mdvdb-mem stats
+openclaw mdvdb-mem list                        # memory count
+openclaw mdvdb-mem search "query" --limit 10   # search
+openclaw mdvdb-mem ingest                      # index all files
+openclaw mdvdb-mem ingest --file path/to.md    # index one file
+openclaw mdvdb-mem reindex                     # full re-embed
+openclaw mdvdb-mem stats                       # index statistics
 ```
 
 ## How it works
 
-1. Memories are stored as `.md` files organized by date (`YYYY-MM-DD/shortid.md`)
-2. Each file has YAML frontmatter with `id`, `category`, `importance`, `created`, `source`, and `tags`
-3. The plugin shells out to `mdvdb` CLI for indexing (`ingest`) and retrieval (`search`)
-4. Search results are filtered by minimum score and ranked by the selected mode
+1. Memories stored as `YYYY-MM-DD-<shortId>.md` with YAML frontmatter
+2. Related memories linked via `[[wiki-links]]` for link-boosting
+3. Plugin shells out to `mdvdb` CLI for indexing and search
+4. Time decay scoped to time-log files only — static knowledge stays evergreen
+5. OpenClaw workspace files excluded by default
 
 ## Testing
 

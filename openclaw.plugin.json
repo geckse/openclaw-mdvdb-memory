@@ -9,12 +9,50 @@
       "memoryDir": {
         "type": "string",
         "description": "Directory to store memory files",
-        "default": "~/.openclaw/memory/mdvdb/"
+        "default": "~/.openclaw/workspace/memory/"
       },
       "mdvdbBin": {
         "type": "string",
         "description": "Path to the mdvdb binary",
         "default": "mdvdb"
+      },
+      "embedding": {
+        "type": "object",
+        "description": "Embedding provider configuration",
+        "properties": {
+          "provider": {
+            "type": "string",
+            "enum": ["openai", "ollama", "custom"],
+            "default": "openai",
+            "description": "Embedding provider: openai, ollama, or custom"
+          },
+          "model": {
+            "type": "string",
+            "description": "Embedding model name (e.g. text-embedding-3-small, nomic-embed-text)"
+          },
+          "dimensions": {
+            "type": "number",
+            "description": "Vector dimensions (default: provider-specific)"
+          },
+          "apiKey": {
+            "type": "string",
+            "description": "API key for OpenAI or custom provider. Supports ${ENV_VAR} syntax."
+          },
+          "baseUrl": {
+            "type": "string",
+            "description": "Base URL for custom embedding endpoint"
+          },
+          "ollamaHost": {
+            "type": "string",
+            "description": "Ollama server URL (default: http://localhost:11434)"
+          }
+        }
+      },
+      "ignorePatterns": {
+        "type": "array",
+        "items": { "type": "string" },
+        "description": "File patterns to exclude from indexing. OpenClaw workspace files (AGENTS.md, SOUL.md, etc.) are excluded by default.",
+        "default": ["AGENTS.md", "HEARTBEAT.md", "SOUL.md", "IDENTITY.md", "BOOTSTRAP.md", "TOOLS.md", "USER.md"]
       },
       "autoCapture": {
         "type": "boolean",
@@ -66,7 +104,19 @@
           },
           "decayHalfLife": {
             "type": "number",
-            "description": "Half-life in days for time decay (uses mdvdb config if unset)"
+            "description": "Half-life in days for time decay",
+            "default": 7
+          },
+          "decayInclude": {
+            "type": "array",
+            "items": { "type": "string" },
+            "description": "Only apply time decay to files matching these glob patterns (default: time-log memory files only)",
+            "default": ["????-??-??-*.md"]
+          },
+          "decayExclude": {
+            "type": "array",
+            "items": { "type": "string" },
+            "description": "Exclude files matching these glob patterns from time decay"
           }
         }
       }
@@ -80,6 +130,38 @@
     "mdvdbBin": {
       "label": "mdvdb Binary Path",
       "help": "Path to the mdvdb CLI binary (must be installed separately)",
+      "advanced": true
+    },
+    "embedding.provider": {
+      "label": "Embedding Provider",
+      "help": "Embedding provider: openai, ollama, or custom (default: openai)"
+    },
+    "embedding.model": {
+      "label": "Embedding Model",
+      "help": "Model name (e.g. text-embedding-3-small for OpenAI, nomic-embed-text for Ollama)",
+      "advanced": true
+    },
+    "embedding.dimensions": {
+      "label": "Embedding Dimensions",
+      "help": "Vector dimensions (default: provider-specific)",
+      "advanced": true
+    },
+    "embedding.apiKey": {
+      "label": "API Key",
+      "sensitive": true,
+      "placeholder": "sk-proj-... or ${OPENAI_API_KEY}",
+      "help": "API key for OpenAI or custom provider"
+    },
+    "embedding.baseUrl": {
+      "label": "Custom Base URL",
+      "placeholder": "https://api.example.com/v1",
+      "help": "Base URL for custom embedding endpoint",
+      "advanced": true
+    },
+    "embedding.ollamaHost": {
+      "label": "Ollama Host",
+      "placeholder": "http://localhost:11434",
+      "help": "Ollama server URL (default: http://localhost:11434)",
       "advanced": true
     },
     "autoCapture": {
@@ -120,6 +202,16 @@
     "searchDefaults.decayHalfLife": {
       "label": "Decay Half-Life (days)",
       "help": "Number of days for memory relevance to halve (uses mdvdb config if unset)",
+      "advanced": true
+    },
+    "searchDefaults.decayInclude": {
+      "label": "Decay Include Patterns",
+      "help": "Only apply time decay to files matching these patterns (default: time-log memory files only)",
+      "advanced": true
+    },
+    "searchDefaults.decayExclude": {
+      "label": "Decay Exclude Patterns",
+      "help": "Exclude files matching these patterns from time decay",
       "advanced": true
     }
   }
