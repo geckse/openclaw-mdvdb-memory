@@ -103,8 +103,12 @@ export class MdvdbMemory {
     args.push("--limit", String(limit));
     args.push("--mode", mode);
 
+    args.push("--min-score", String(minScore));
+
     if (decay) {
       args.push("--decay");
+    } else {
+      args.push("--no-decay");
     }
     if (boostLinks) {
       args.push("--boost-links");

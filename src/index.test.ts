@@ -56,6 +56,28 @@ describe("shouldCapture", () => {
   });
 });
 
+describe("shouldCapture (additional)", () => {
+  let shouldCapture: typeof import("./index.js")["shouldCapture"];
+
+  beforeEach(async () => {
+    ({ shouldCapture } = await import("./index.js"));
+  });
+
+  it("returns true for phone number trigger", () => {
+    expect(shouldCapture("Call me at +1234567890123")).toBe(true);
+  });
+
+  it("respects custom maxChars option", () => {
+    // Build a ~1200 char string with a trigger word
+    const text = "I prefer " + "a".repeat(1191);
+    expect(text.length).toBe(1200);
+    // Default maxChars (500) → too long → false
+    expect(shouldCapture(text)).toBe(false);
+    // Custom maxChars 1500 → within limit → true
+    expect(shouldCapture(text, { maxChars: 1500 })).toBe(true);
+  });
+});
+
 describe("detectCategory", () => {
   let detectCategory: typeof import("./index.js")["detectCategory"];
 
@@ -218,6 +240,136 @@ describe("memoryConfigSchema", () => {
 
   it("rejects invalid searchDefaults.limit", () => {
     expect(() => memoryConfigSchema.parse({ searchDefaults: { limit: 0 } })).toThrow("at least 1");
+  });
+});
+
+describe("config env var resolution", () => {
+  let memoryConfigSchema: typeof import("./config.js")["memoryConfigSchema"];
+
+  beforeEach(async () => {
+    ({ memoryConfigSchema } = await import("./config.js"));
+  });
+
+  afterEach(() => {
+    delete process.env.TEST_VAR;
+  });
+
+  it("resolves ${VAR} in config values", () => {
+    process.env.TEST_VAR = "/tmp/test";
+    const cfg = memoryConfigSchema.parse({ memoryDir: "${TEST_VAR}" });
+    expect(cfg.memoryDir).toBe("/tmp/test");
+  });
+});
+
+describe("plugin registration via mock API", () => {
+  let memoryPlugin: typeof import("./index.js")["default"];
+
+  beforeEach(async () => {
+    ({ default: memoryPlugin } = await import("./index.js"));
+  });
+
+  it("registers 3 tools, CLI, and service", () => {
+    const tools: Array<{ name: string }> = [];
+    const clis: Array<unknown> = [];
+    const services: Array<{ id: string }> = [];
+    const events: Array<string> = [];
+
+    const mockApi = {
+      pluginConfig: {},
+      resolvePath: (p: string) => p,
+      logger: { info: vi.fn(), warn: vi.fn() },
+      registerTool: (tool: { name: string }) => tools.push(tool),
+      registerCli: (cb: unknown) => clis.push(cb),
+      registerService: (svc: { id: string }) => services.push(svc),
+      on: (event: string) => events.push(event),
+    };
+
+    memoryPlugin.register(mockApi as any);
+
+    expect(tools).toHaveLength(3);
+    expect(tools.map((t) => t.name).sort()).toEqual(["memory_forget", "memory_recall", "memory_store"]);
+    expect(clis).toHaveLength(1);
+    expect(services).toHaveLength(1);
+  });
+});
+
+describe("CLI arg builder verification", () => {
+  let MdvdbMemory: typeof import("./mdvdb.js")["MdvdbMemory"];
+  let execFileAsyncMock: ReturnType<typeof vi.fn>;
+
+  beforeEach(async () => {
+    // We'll test by mocking execFile and inspecting args
+    execFileAsyncMock = vi.fn().mockResolvedValue({ stdout: "[]", stderr: "" });
+
+    // Import the real class — we can't easily mock execFile, so we'll
+    // use a non-existent binary and catch the error to inspect args.
+    // Instead, let's just verify the args building logic by creating
+    // an instance and calling search, which will fail but we can check
+    // the constructed args via a spy.
+    ({ MdvdbMemory } = await import("./mdvdb.js"));
+  });
+
+  it("builds correct search args with all options", async () => {
+    const mem = new MdvdbMemory({
+      memoryDir: "/tmp/test-args",
+      mdvdbBin: "echo", // use echo as a no-op binary
+      autoCapture: false,
+      autoRecall: false,
+      captureMaxChars: 500,
+      searchDefaults: { mode: "hybrid", decay: true, boostLinks: false, limit: 5, minScore: 0.1 },
+    });
+
+    // Mock ensureInitialized to skip init
+    vi.spyOn(mem, "ensureInitialized").mockResolvedValue();
+
+    // Mock the private runMdvdb to capture args
+    const runSpy = vi.spyOn(mem as any, "runMdvdb").mockResolvedValue({ stdout: "[]", stderr: "" });
+
+    await mem.search("test query", {
+      mode: "semantic",
+      limit: 10,
+      minScore: 0.5,
+      decay: false,
+      boostLinks: true,
+      decayHalfLife: 7,
+    });
+
+    expect(runSpy).toHaveBeenCalledOnce();
+    const args = runSpy.mock.calls[0][0] as string[];
+    expect(args).toContain("search");
+    expect(args).toContain("test query");
+    expect(args).toContain("--json");
+    expect(args).toContain("--mode");
+    expect(args[args.indexOf("--mode") + 1]).toBe("semantic");
+    expect(args).toContain("--limit");
+    expect(args[args.indexOf("--limit") + 1]).toBe("10");
+    expect(args).toContain("--min-score");
+    expect(args[args.indexOf("--min-score") + 1]).toBe("0.5");
+    expect(args).toContain("--no-decay");
+    expect(args).not.toContain("--decay");
+    expect(args).toContain("--boost-links");
+    expect(args).toContain("--decay-half-life");
+    expect(args[args.indexOf("--decay-half-life") + 1]).toBe("7");
+  });
+
+  it("builds args with decay enabled", async () => {
+    const mem = new MdvdbMemory({
+      memoryDir: "/tmp/test-args",
+      mdvdbBin: "echo",
+      autoCapture: false,
+      autoRecall: false,
+      captureMaxChars: 500,
+      searchDefaults: { mode: "hybrid", decay: true, boostLinks: false, limit: 5, minScore: 0.1 },
+    });
+
+    vi.spyOn(mem, "ensureInitialized").mockResolvedValue();
+    const runSpy = vi.spyOn(mem as any, "runMdvdb").mockResolvedValue({ stdout: "[]", stderr: "" });
+
+    await mem.search("test", { decay: true });
+
+    const args = runSpy.mock.calls[0][0] as string[];
+    expect(args).toContain("--decay");
+    expect(args).not.toContain("--no-decay");
   });
 });
 
