@@ -1,0 +1,10 @@
+# OS
+.DS_Store
+
+# MarkdownVDB index
+.markdownvdb/
+
+# Resource / reference files
+resource/
+
+mdvdb-repo-readme.md
