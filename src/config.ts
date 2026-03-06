@@ -89,7 +89,15 @@ function parseSearchDefaults(raw: Record<string, unknown> | undefined): SearchDe
 export const memoryConfigSchema = {
   parse(value: unknown): MdvdbMemoryConfig {
     if (!value || typeof value !== "object" || Array.isArray(value)) {
-      throw new Error("memory config required");
+      // No config provided — use all defaults
+      return {
+        memoryDir: DEFAULT_MEMORY_DIR,
+        mdvdbBin: DEFAULT_MDVDB_BIN,
+        autoCapture: false,
+        autoRecall: true,
+        captureMaxChars: DEFAULT_CAPTURE_MAX_CHARS,
+        searchDefaults: parseSearchDefaults(undefined),
+      };
     }
     const cfg = value as Record<string, unknown>;
     assertAllowedKeys(

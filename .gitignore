@@ -1,5 +1,30 @@
 # OS
 .DS_Store
+Thumbs.db
+
+# Node
+node_modules/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# Build output
+dist/
+*.tsbuildinfo
+
+# Environment
+.env
+.env.*
+!.env.example
+
+# Coverage
+coverage/
+
+# Editor
+.vscode/
+.idea/
+*.swp
+*.swo
 
 # MarkdownVDB index
 .markdownvdb/
@@ -9,13 +34,15 @@ resource/
 
 mdvdb-repo-readme.md
 
-# Auto Claude data directory
+# Auto Claude
 .auto-claude/
-
-# Auto Claude generated files
 .auto-claude-security.json
 .auto-claude-status
 .claude_settings.json
 .worktrees/
 .security-key
 logs/security/
+
+# Misc
+pitch-deck.html
+pitch-deck.pdf

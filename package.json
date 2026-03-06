@@ -1,5 +1,5 @@
 {
-  "name": "@geckse/openclaw-mdvdb-memory",
+  "name": "@geckse/memory-mdvdb",
   "version": "0.1.0",
   "description": "mdvdb-backed long-term memory plugin for OpenClaw with hybrid search, time decay, and link boosting",
   "type": "module",
@@ -12,7 +12,11 @@
   "scripts": {
     "test": "vitest run",
     "test:watch": "vitest",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "dev:install": "openclaw plugins install --link . && openclaw config set plugins.slots.memory memory-mdvdb",
+    "dev:uninstall": "openclaw plugins uninstall memory-mdvdb && openclaw config unset plugins.slots.memory",
+    "dev:disable": "openclaw config unset plugins.slots.memory && openclaw plugins disable memory-mdvdb",
+    "dev:enable": "openclaw config set plugins.slots.memory memory-mdvdb && openclaw plugins enable memory-mdvdb"
   },
   "dependencies": {
     "@sinclair/typebox": "0.34.48"

@@ -1,6 +1,6 @@
 {
   "id": "memory-mdvdb",
-  "name": "Memory (mdvdb)",
+  "name": "Memory with mdvdb",
   "description": "mdvdb-backed long-term memory with hybrid search, time decay, and link boosting",
   "kind": "memory",
   "configSchema": {
